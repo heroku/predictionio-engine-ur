@@ -67,7 +67,7 @@ object EsClient {
 
   implicit val formats = DefaultFormats
 
-  private lazy val client = if (Storage.getConfig("ELASTICSEARCH").nonEmpty)
+  private lazy val client: RestClient = if (Storage.getConfig("ELASTICSEARCH").nonEmpty)
     new elasticsearch.StorageClient(Storage.getConfig("ELASTICSEARCH").get).client
   else
     throw new IllegalStateException("No Elasticsearch client configuration detected, check your pio-env.sh for" +
@@ -84,32 +84,26 @@ object EsClient {
    *  @return true if all is well
    */
   def deleteIndex(indexName: String, refresh: Boolean = false): Boolean = {
-    val restClient = client.open()
-    try {
-      restClient.performRequest(
-        "HEAD",
-        s"/$indexName",
-        Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
-          case 404 => false
-          case 200 =>
-            restClient.performRequest(
-              "DELETE",
-              s"/$indexName",
-              Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
-                case 200 =>
-                  if (refresh) refreshIndex(indexName)
-                case _ =>
-                  logger.info(s"Index $indexName wasn't deleted, but may have quietly failed.")
-              }
-            true
-          case _ =>
-            throw new IllegalStateException()
-            false
-        }
-    } finally {
-      restClient.close()
-      false
-    }
+    client.performRequest(
+      "HEAD",
+      s"/$indexName",
+      Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
+        case 404 => false
+        case 200 =>
+          client.performRequest(
+            "DELETE",
+            s"/$indexName",
+            Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
+              case 200 =>
+                if (refresh) refreshIndex(indexName)
+              case _ =>
+                logger.info(s"Index $indexName wasn't deleted, but may have quietly failed.")
+            }
+          true
+        case _ =>
+          throw new IllegalStateException()
+          false
+      }
   }
 
   /** Creates a new empty index in Elasticsearch and initializes mappings for fields that will be used
@@ -127,81 +121,69 @@ object EsClient {
     fieldNames: List[String],
     typeMappings: Map[String, String] = Map.empty,
     refresh: Boolean = false): Boolean = {
-    val restClient = client.open()
-    val result = try {
-      restClient.performRequest(
-        "HEAD",
-        s"/$indexName",
-        Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
-          case 404 => {
-            var mappings = s"""
-            |{ "mappings": { "$indexType": {
-            |  "properties": {
-            """.stripMargin.replace("\n", "")
-
-            def mappingsField(`type`: String) = {
-              s"""
-            |    : {
-            |      "type": "${`type`}"
-            |    },
-            """.stripMargin.replace("\n", "")
-            }
-
-            val mappingsTail = """
-            |    "id": {
-            |      "type": "keyword"
-            |    }
-            |  }
-            |}}}
+    client.performRequest(
+      "HEAD",
+      s"/$indexName",
+      Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
+        case 404 => {
+          var mappings = s"""
+          |{ "mappings": { "$indexType": {
+          |  "properties": {
           """.stripMargin.replace("\n", "")
 
-            fieldNames.foreach { fieldName =>
-              if (typeMappings.contains(fieldName))
-                mappings += (s""""$fieldName"""" + mappingsField(typeMappings(fieldName)))
-              else // unspecified fields are treated as not_analyzed keyword
-                mappings += (s""""$fieldName"""" + mappingsField("keyword"))
-            }
-            mappings += mappingsTail // any other string is not_analyzed
-            val entity = new NStringEntity(mappings, ContentType.APPLICATION_JSON)
-            restClient.performRequest(
-              "PUT",
-              s"/$indexName",
-              Map.empty[String, String].asJava,
-              entity).getStatusLine.getStatusCode match {
-                case 200 =>
-                  // now refresh to get it 'committed'
-                  // todo: should do this after the new index is created so no index downtime
-                  if (refresh) refreshIndex(indexName)
-                case _ =>
-                  logger.info(s"Index $indexName wasn't created, but may have quietly failed.")
-              }
-            true
+          def mappingsField(`type`: String) = {
+            s"""
+          |    : {
+          |      "type": "${`type`}"
+          |    },
+          """.stripMargin.replace("\n", "")
           }
-          case 200 =>
-            logger.warn(s"Elasticsearch index: $indexName wasn't created because it already exists. This may be an error.")
-            false
-          case _ =>
-            throw new IllegalStateException(s"/$indexName is invalid.")
-            false
+
+          val mappingsTail = """
+          |    "id": {
+          |      "type": "keyword"
+          |    }
+          |  }
+          |}}}
+        """.stripMargin.replace("\n", "")
+
+          fieldNames.foreach { fieldName =>
+            if (typeMappings.contains(fieldName))
+              mappings += (s""""$fieldName"""" + mappingsField(typeMappings(fieldName)))
+            else // unspecified fields are treated as not_analyzed keyword
+              mappings += (s""""$fieldName"""" + mappingsField("keyword"))
+          }
+          mappings += mappingsTail // any other string is not_analyzed
+          val entity = new NStringEntity(mappings, ContentType.APPLICATION_JSON)
+          client.performRequest(
+            "PUT",
+            s"/$indexName",
+            Map.empty[String, String].asJava,
+            entity).getStatusLine.getStatusCode match {
+              case 200 =>
+                // now refresh to get it 'committed'
+                // todo: should do this after the new index is created so no index downtime
+                if (refresh) refreshIndex(indexName)
+              case _ =>
+                logger.info(s"Index $indexName wasn't created, but may have quietly failed.")
+            }
+          true
         }
-    } finally {
-      restClient.close()
-      false
-    }
-    result
+        case 200 =>
+          logger.warn(s"Elasticsearch index: $indexName wasn't created because it already exists. This may be an error.")
+          false
+        case _ =>
+          throw new IllegalStateException(s"/$indexName is invalid.")
+          false
+      }
   }
 
   /** Commits any pending changes to the index */
   def refreshIndex(indexName: String): Unit = {
-    val restClient = client.open()
-    try {
-      restClient.performRequest(
-        "POST",
-        s"/$indexName/_refresh",
-        Map.empty[String, String].asJava)
-    } finally {
-      restClient.close()
-    }
+    client.performRequest(
+      "POST",
+      s"/$indexName/_refresh",
+      Map.empty[String, String].asJava)
   }
 
   /** Create new index and hot-swap the new after it's indexed and ready to take over, then delete the old */
@@ -224,57 +206,50 @@ object EsClient {
     indexRDD.coalesce(esConcurrency.getOrElse("1").toInt).saveToEs(newIndexURI, Map("es.mapping.id" -> "id"))
     //refreshIndex(newIndex)
 
-    val restClient = client.open()
-    try {
-      // get index for alias, change a char, create new one with new id and index it, swap alias and delete old one
+    // get index for alias, change a char, create new one with new id and index it, swap alias and delete old one
 
-      val (oldIndexSet, deleteOldIndexQuery) = restClient.performRequest(
-        // Does the alias exist?
-        "HEAD",
-        s"/_alias/$alias",
-        Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
-          case 200 => {
-            val response = restClient.performRequest(
-              "GET",
-              s"/_alias/$alias",
-              Map.empty[String, String].asJava)
-            val responseJValue = parse(EntityUtils.toString(response.getEntity))
-            val oldIndexSet = responseJValue.extract[Map[String, JValue]].keys
-            val oldIndexName = oldIndexSet.head
-            restClient.performRequest(
-              // Does the old index exist?
-              "HEAD",
-              s"/$oldIndexName",
-              Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
-                case 200 => {
-                  val deleteOldIndexQuery = s""",{ "remove_index": { "index": "${oldIndexName}"}}"""
-                  (oldIndexSet, deleteOldIndexQuery)
-                }
-                case _ => (Set(), "")
+    val (oldIndexSet, deleteOldIndexQuery) = client.performRequest(
+      // Does the alias exist?
+      "HEAD",
+      s"/_alias/$alias",
+      Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
+        case 200 => {
+          val response = client.performRequest(
+            "GET",
+            s"/_alias/$alias",
+            Map.empty[String, String].asJava)
+          val responseJValue = parse(EntityUtils.toString(response.getEntity))
+          val oldIndexSet = responseJValue.extract[Map[String, JValue]].keys
+          val oldIndexName = oldIndexSet.head
+          client.performRequest(
+            // Does the old index exist?
+            "HEAD",
+            s"/$oldIndexName",
+            Map.empty[String, String].asJava).getStatusLine.getStatusCode match {
+              case 200 => {
+                val deleteOldIndexQuery = s""",{ "remove_index": { "index": "${oldIndexName}"}}"""
+                (oldIndexSet, deleteOldIndexQuery)
               }
-          }
-          case _ => (Set(), "")
+              case _ => (Set(), "")
+            }
         }
+        case _ => (Set(), "")
+      }
 
-      val aliasQuery = s"""
-        |{
-        |    "actions" : [
-        |        { "add":  { "index": "${newIndex}", "alias": "${alias}" } }
-        |        ${deleteOldIndexQuery}
-        |    ]
-        |}""".stripMargin.replace("\n", "")
-      val entity = new NStringEntity(aliasQuery, ContentType.APPLICATION_JSON)
-      restClient.performRequest(
-        "POST",
-        "/_aliases",
-        Map.empty[String, String].asJava,
-        entity)
-      oldIndexSet.foreach(deleteIndex(_))
-
-    } finally {
-      restClient.close()
-    }
-
+    val aliasQuery = s"""
+      |{
+      |    "actions" : [
+      |        { "add":  { "index": "${newIndex}", "alias": "${alias}" } }
+      |        ${deleteOldIndexQuery}
+      |    ]
+      |}""".stripMargin.replace("\n", "")
+    val entity = new NStringEntity(aliasQuery, ContentType.APPLICATION_JSON)
+    client.performRequest(
+      "POST",
+      "/_aliases",
+      Map.empty[String, String].asJava,
+      entity)
+    oldIndexSet.foreach(deleteIndex(_))
   }
 
   /** Performs a search using the JSON query String
@@ -284,21 +259,14 @@ object EsClient {
    *  @return a [PredictedResults] collection
    */
   def search(query: String, indexName: String): Option[JValue] = {
-    val restClient = client.open()
-    try {
-      val response = restClient.performRequest(
-        "POST",
-        s"/$indexName/_search",
-        Map.empty[String, String].asJava,
-        new StringEntity(query, ContentType.APPLICATION_JSON))
-      response.getStatusLine.getStatusCode match {
-        case 200 => Some(parse(EntityUtils.toString(response.getEntity)))
-        case _   => None
-      }
-
-    } finally {
-      restClient.close()
-      None
+    val response = client.performRequest(
+      "POST",
+      s"/$indexName/_search",
+      Map.empty[String, String].asJava,
+      new StringEntity(query, ContentType.APPLICATION_JSON))
+    response.getStatusLine.getStatusCode match {
+      case 200 => Some(parse(EntityUtils.toString(response.getEntity)))
+      case _   => None
     }
   }
 
@@ -311,19 +279,14 @@ object EsClient {
    */
   def getSource(indexName: String, typeName: String, doc: String): Map[String, List[String]] = {
     val url = s"/$indexName/$typeName/$doc"
-    val restClient = client.open()
-    try {
-      val response = restClient.performRequest(
-        "GET",
-        url,
-        Map.empty[String, String].asJava)
-      val responseJValue = parse(EntityUtils.toString(response.getEntity))
-      val result = (responseJValue \ "_source").values.asInstanceOf[Map[String, List[String]]]
-      logger.info(s"getSource for ${url} result: ${result}")
-      result
-    } finally {
-      restClient.close()
-    }
+    val response = client.performRequest(
+      "GET",
+      url,
+      Map.empty[String, String].asJava)
+    val responseJValue = parse(EntityUtils.toString(response.getEntity))
+    val result = (responseJValue \ "_source").values.asInstanceOf[Map[String, List[String]]]
+    logger.info(s"getSource for ${url} result: ${result}")
+    result
   }
 
   /*
@@ -339,28 +302,22 @@ object EsClient {
 }
    */
   def getIndexName(alias: String): Option[String] = {
-    val restClient = client.open()
-    try {
-      val response = restClient.performRequest(
-        "GET",
-        s"/_alias/$alias",
-        Map.empty[String, String].asJava)
-      val responseJValue = parse(EntityUtils.toString(response.getEntity))
-      val allIndicesMap = responseJValue.extract[Map[String, JValue]]
-      if (allIndicesMap.size == 1) {
-        allIndicesMap.headOption.map(_._1)
-      } else {
-        // delete all the indices that are pointed to by the alias, they can't be used
-        logger.warn("There is no 1-1 mapping of index to alias so deleting the old indexes that are referenced by the " +
-          "alias. This may have been caused by a crashed or stopped `pio train` operation so try running it again.")
-        if (!allIndicesMap.isEmpty) {
-          allIndicesMap.keys.foreach(indexName => deleteIndex(indexName, refresh = true))
-        }
-        None // if more than one abort, need to clean up bad aliases
+    val response = client.performRequest(
+      "GET",
+      s"/_alias/$alias",
+      Map.empty[String, String].asJava)
+    val responseJValue = parse(EntityUtils.toString(response.getEntity))
+    val allIndicesMap = responseJValue.extract[Map[String, JValue]]
+    if (allIndicesMap.size == 1) {
+      allIndicesMap.headOption.map(_._1)
+    } else {
+      // delete all the indices that are pointed to by the alias, they can't be used
+      logger.warn("There is no 1-1 mapping of index to alias so deleting the old indexes that are referenced by the " +
+        "alias. This may have been caused by a crashed or stopped `pio train` operation so try running it again.")
+      if (!allIndicesMap.isEmpty) {
+        allIndicesMap.keys.foreach(indexName => deleteIndex(indexName, refresh = true))
       }
-    } finally {
-      restClient.close()
-      None
+      None // if more than one abort, need to clean up bad aliases
     }
   }
 
