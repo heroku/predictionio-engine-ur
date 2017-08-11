@@ -18,7 +18,7 @@ val mahoutVersion = "0.13.0"
 // local Maven repo, until Elasticasearch authentication PR
 // is merged & released:
 // https://github.com/apache/incubator-predictionio/pull/372
-val pioVersion = "0.11.0-SNAPSHOT"
+val pioVersion = "0.12.0-SNAPSHOT"
 
 // This Elasticsearch version must exactly match the server version.
 // On Heroku, this means the Bonsai Add-on.
