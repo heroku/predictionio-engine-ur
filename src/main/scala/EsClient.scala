@@ -22,29 +22,21 @@ import java.util
 import grizzled.slf4j.Logger
 import org.apache.http.util.EntityUtils
 
-// storage package isolate from data
-import org.apache.predictionio.data.storage.elasticsearch
-import org.apache.predictionio.data.storage._
-//import org.apache.hadoop.hbase.protobuf.generated.ClientProtos.GetRequest
+import org.apache.predictionio.data.storage.{ DataMap, Storage, StorageClientConfig }
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
-//import org.elasticsearch.action.admin.indices.alias.get.GetAliasesRequest
-//import org.elasticsearch.action.admin.indices.create.CreateIndexRequest
-//import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
-//import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest
-//import org.elasticsearch.action.admin.indices.refresh.RefreshRequest
-//import org.elasticsearch.action.get.GetResponse
-//import org.elasticsearch.client.transport.TransportClient
-import org.elasticsearch.client.RestClient
-//import org.elasticsearch.common.settings.{ ImmutableSettings, Settings }
+import org.apache.http.HttpHost
+import org.apache.http.auth.{ AuthScope, UsernamePasswordCredentials }
 import org.apache.http.entity.ContentType
 import org.apache.http.entity.StringEntity
+import org.apache.http.impl.client.BasicCredentialsProvider
+import org.apache.http.impl.nio.client.HttpAsyncClientBuilder
 import org.apache.http.nio.entity.NStringEntity
 import org.joda.time.DateTime
 import org.json4s.jackson.JsonMethods._
+import org.elasticsearch.client.RestClient
+import org.elasticsearch.client.RestClientBuilder.HttpClientConfigCallback
 import org.elasticsearch.spark._
-//import org.elasticsearch.node.NodeBuilder._
-//import org.elasticsearch.search.SearchHits
 import org.json4s.JValue
 import org.json4s.DefaultFormats
 import org.template.conversions.{ ItemID, ItemProps }
@@ -67,11 +59,60 @@ object EsClient {
 
   implicit val formats = DefaultFormats
 
-  private lazy val client: RestClient = if (Storage.getConfig("ELASTICSEARCH").nonEmpty)
-    new elasticsearch.StorageClient(Storage.getConfig("ELASTICSEARCH").get).client
-  else
+  private lazy val client: RestClient = if (Storage.getConfig("ELASTICSEARCH").nonEmpty) {
+    val config = Storage.getConfig("ELASTICSEARCH").get
+    val usernamePassword = (
+      config.properties.get("USERNAME"),
+      config.properties.get("PASSWORD"))
+    val optionalBasicAuth: Option[(String, String)] = usernamePassword match {
+      case (None, None) => None
+      case (username, password) => Some(
+        (username.getOrElse(""), password.getOrElse("")))
+    }
+    open(getHttpHosts(config), optionalBasicAuth)
+  } else {
     throw new IllegalStateException("No Elasticsearch client configuration detected, check your pio-env.sh for" +
       "proper configuration settings")
+  }
+
+  // Method lifted from ESUtils in PredictionIO
+  def getHttpHosts(config: StorageClientConfig): Seq[HttpHost] = {
+    val hosts = config.properties.get("HOSTS").
+      map(_.split(",").toSeq).getOrElse(Seq("localhost"))
+    val ports = config.properties.get("PORTS").
+      map(_.split(",").toSeq.map(_.toInt)).getOrElse(Seq(9200))
+    val schemes = config.properties.get("SCHEMES").
+      map(_.split(",").toSeq).getOrElse(Seq("http"))
+    (hosts, ports, schemes).zipped.map((h, p, s) => new HttpHost(h, p, s))
+  }
+
+  var _sharedRestClient: Option[RestClient] = None
+
+  def open(
+    hosts: Seq[HttpHost],
+    basicAuth: Option[(String, String)] = None): RestClient = {
+    val newClient = _sharedRestClient match {
+      case Some(c) => c
+      case None => {
+        var builder = RestClient.builder(hosts: _*)
+        builder = basicAuth match {
+          case Some((username, password)) => builder.setHttpClientConfigCallback(
+            new BasicAuthProvider(username, password))
+          case None => builder
+        }
+        builder.build()
+      }
+    }
+    _sharedRestClient = Some(newClient)
+    newClient
+  }
+
+  def close(): Unit = {
+    if (!_sharedRestClient.isEmpty) {
+      _sharedRestClient.get.close()
+      _sharedRestClient = None
+    }
+  }
 
   // wrong way that uses only default settings, which will be a localhost ES sever.
   //private lazy val client = new elasticsearch.StorageClient(StorageClientConfig()).client
@@ -327,5 +368,21 @@ object EsClient {
     getIndexName(alias)
       .map(index => sc.esJsonRDD(alias + "/" + typeName) map { case (itemId, json) => itemId -> DataMap(json).fields })
       .getOrElse(sc.emptyRDD)
+  }
+}
+
+class BasicAuthProvider(
+  val username: String,
+  val password: String)
+    extends HttpClientConfigCallback {
+
+  val credentialsProvider = new BasicCredentialsProvider()
+  credentialsProvider.setCredentials(
+    AuthScope.ANY,
+    new UsernamePasswordCredentials(username, password))
+
+  override def customizeHttpClient(
+    httpClientBuilder: HttpAsyncClientBuilder): HttpAsyncClientBuilder = {
+    httpClientBuilder.setDefaultCredentialsProvider(credentialsProvider)
   }
 }
