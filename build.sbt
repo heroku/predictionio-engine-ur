@@ -26,9 +26,9 @@ val elasticsearchVersion = "5.4.1"
 libraryDependencies ++= Seq(
   "org.apache.predictionio" %% "apache-predictionio-core" % pioVersion % "provided",
   "org.elasticsearch.client" % "rest" % elasticsearchVersion,
-  "org.elasticsearch"       %% "elasticsearch-spark-20" % elasticsearchVersion
+  "org.elasticsearch"       %% "elasticsearch-spark-20" % elasticsearchVersion % "provided"
     exclude("org.apache.spark", "*"),
-  "org.elasticsearch"        % "elasticsearch-hadoop-mr"  % elasticsearchVersion,
+  "org.elasticsearch"        % "elasticsearch-hadoop-mr"  % elasticsearchVersion % "provided",
   "org.apache.spark" %% "spark-core" % "2.1.0" % "provided",
   "org.apache.spark" %% "spark-mllib" % "2.1.0" % "provided",
   "org.xerial.snappy" % "snappy-java" % "1.1.1.7",
