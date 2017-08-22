@@ -59,8 +59,9 @@ object EsClient {
 
   implicit val formats = DefaultFormats
 
-  private lazy val client: RestClient = if (Storage.getConfig("ELASTICSEARCH").nonEmpty) {
-    val config = Storage.getConfig("ELASTICSEARCH").get
+  private val configOpt = Storage.getConfig("ELASTICSEARCH")
+
+  private lazy val client: RestClient = configOpt map { config =>
     val usernamePassword = (
       config.properties.get("USERNAME"),
       config.properties.get("PASSWORD"))
@@ -70,7 +71,7 @@ object EsClient {
         (username.getOrElse(""), password.getOrElse("")))
     }
     open(getHttpHosts(config), optionalBasicAuth)
-  } else {
+  } getOrElse {
     throw new IllegalStateException("No Elasticsearch client configuration detected, check your pio-env.sh for" +
       "proper configuration settings")
   }
@@ -244,7 +245,32 @@ object EsClient {
     // TODO check if {"es.mapping.id": "id"} work on ESHadoop Interface of ESv5
     // Repartition to fit into Elasticsearch concurrency limits.
     val esConcurrency = sys.env.get("PIO_UR_ELASTICSEARCH_CONCURRENCY")
-    indexRDD.coalesce(esConcurrency.getOrElse("1").toInt).saveToEs(newIndexURI, Map("es.mapping.id" -> "id"))
+
+    val usernamePasswordOpt = configOpt flatMap { config =>
+      val usernamePassword = (
+        config.properties.get("USERNAME"),
+        config.properties.get("PASSWORD"))
+      usernamePassword match {
+        case (None, None) => None
+        case (username, password) => Some(
+          (username.getOrElse(""), password.getOrElse("")))
+      }
+    }
+
+    val esConfig = Map("es.mapping.id" -> "id") ++
+      usernamePasswordOpt.map(usernamePassword =>
+        Map(
+          "es.net.http.auth.user" -> usernamePassword._1,
+          "es.net.http.auth.pass" -> usernamePassword._2))
+      .getOrElse(Map.empty[String, String]) ++
+      configOpt.flatMap(config =>
+        config.properties.get("SCHEMES").map(schemes =>
+          if ("https" == schemes) {
+            Map("es.net.ssl" -> "true")
+          } else {
+            Map("es.net.ssl" -> "false")
+          })).getOrElse(Map.empty[String, String])
+    indexRDD.coalesce(esConcurrency.getOrElse("1").toInt).saveToEs(newIndexURI, esConfig)
     //refreshIndex(newIndex)
 
     // get index for alias, change a char, create new one with new id and index it, swap alias and delete old one
