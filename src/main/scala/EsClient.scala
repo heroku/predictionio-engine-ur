@@ -23,6 +23,7 @@ import grizzled.slf4j.Logger
 import org.apache.http.util.EntityUtils
 
 import org.apache.predictionio.data.storage.{ DataMap, Storage, StorageClientConfig }
+import org.apache.predictionio.workflow.CleanupFunctions
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.http.HttpHost
@@ -70,6 +71,7 @@ object EsClient {
       case (username, password) => Some(
         (username.getOrElse(""), password.getOrElse("")))
     }
+    CleanupFunctions.add { EsClient.close }
     open(getHttpHosts(config), optionalBasicAuth)
   } getOrElse {
     throw new IllegalStateException("No Elasticsearch client configuration detected, check your pio-env.sh for" +
