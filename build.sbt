@@ -18,7 +18,7 @@ val mahoutVersion = "0.13.0"
 // local Maven repo, until Elasticasearch authentication PR
 // is merged & released:
 // https://github.com/apache/incubator-predictionio/pull/372
-val pioVersion = "0.12.0-SNAPSHOT"
+val pioVersion = "0.12.0-incubating"
 
 // This Elasticsearch version must exactly match the PredictionIO version.
 val elasticsearchVersion = "5.4.1"
