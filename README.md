@@ -74,11 +74,12 @@ heroku config:set \
 ### Provision Elasticsearch
 
 ```bash
-heroku addons:create bonsai --as PIO_ELASTICSEARCH --version 5.1
+heroku addons:create bonsai --as PIO_ELASTICSEARCH --version 5.4
 ```
 
-* In the Bonsai dashboard, verify that Elasticsearch is really version `5.x`. *Caution: it's easy to accidentally provision the wrong version.*
-* Some regions provide newer versions, like `--version 5.3`.
+Ensure the `--version` you specify is a [currently supported version](https://docs.bonsai.io/v1.0/docs/supported-elasticsearch-versions).
+
+In the Bonsai add-on's dashboard, verify that Elasticsearch is really the requested version. Only versions greater than 5.1 will work with this Heroku app. *Caution: it's easy to accidentally provision the wrong version.*
 
 
 ### Provision Postgres
@@ -94,7 +95,7 @@ heroku addons:create heroku-postgresql:hobby-dev
 
 Initial training data is automatically imported from [`data/initial-events.json`](data/initial-events.json).
 
-👓 When you're ready to begin working with your own data, read about strategies for [importing data](https://github.com/heroku/predictionio-buildpack/blob/master/CUSTOM.md#import-data).
+👓 When you're ready to begin working with your own data, read about strategies for [importing data](https://github.com/heroku/predictionio-buildpack/blob/master/CUSTOM.md#user-content-import-data).
 
 ### Deploy the app
 
