@@ -222,6 +222,8 @@ curl -X "POST" "http://$ENGINE_NAME.herokuapp.com/queries.json" \
 
 ## Local Development
 
+### Clone Engine Template
+
 Start in this repo's working directory. If you don't already have it cloned, then do it now:
 
 ```bash
@@ -232,7 +234,11 @@ git clone \
 cd pio-engine-ur
 ```
 
-Next, **[setup local development](https://github.com/heroku/predictionio-buildpack/blob/master/DEV.md) including Elasticsearch** using the buildpack.
+### Set-up PredictionIO
+
+➡️ **[Setup local development](https://github.com/heroku/predictionio-buildpack/blob/master/DEV.md) including Elasticsearch.**
+
+`bin/pio status` should succeed when this setup is complete.
 
 ### Import sample data
 
