@@ -1,3 +1,5 @@
+⚠️ **This project is no longer active.** No further updates are planned.
+
 # [PredictionIO](https://predictionio.incubator.apache.org) Universal Recommender for [Heroku](https://www.heroku.com)
 
 A fork of the **[Universal Recommender](https://github.com/actionml/universal-recommender) version 0.5.0** deployable with the [PredictionIO buildpack for Heroku](https://github.com/heroku/predictionio-buildpack). Due to substantial revisions to support Elasticsearch on Heroku, this fork lags behind the main UR; conceptual differences beyond version 0.5.0 are listed in the [UR release log](http://actionml.com/docs/ur_version_log).
